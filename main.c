@@ -8,21 +8,25 @@ Ubuntu 20.04 LTS
 
 pthread_t *clients;
 pthread_t barber;
+pthread_t *queue;
+
+int numberOfClients, numberOfChairs;
 
 void *handle_barber()
 {
+    printf("Getting you a magnificent haircut >.<\n");
     pthread_exit(NULL);
 }
 
-void *client(pthread_t customer)
+void *client(void *par)
 {
+    printf("oii\n");
     pthread_exit(NULL);
 }
 
 int main(int argc, char *argv[])
 {
     // Getting Parameters from argv or request input
-    int numberOfClients, numberOfChairs;
     printf("Welcome to our barber shop!\n");
     if (argc != 3)
     {
@@ -39,17 +43,19 @@ int main(int argc, char *argv[])
     // Creating barber thread
     pthread_create(&barber, NULL, handle_barber, NULL);
 
-    // Creating Clients as well as allocating memory for each client
+    // Creating Clients as well as allocating memory for each client and queue
     clients = (pthread_t *)malloc(sizeof(pthread_t) * numberOfClients);
+    queue = (pthread_t *)malloc(sizeof(pthread_t) * numberOfChairs);
     int i;
     for (i = 0; i < numberOfChairs; i++)
     {
-        pthread_create(clients[i], NULL, client, clients[i]);
+        pthread_create(&clients[i], NULL, client, NULL);
     }
     // Waiting for barber to exit
     pthread_join(barber, NULL);
 
     // Freeing memory space
     free(clients);
+    free(queue);
     return 0;
 }
