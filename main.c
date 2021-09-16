@@ -1,8 +1,10 @@
 /* Pedro Henrique Gomes Peixoto Januario
 DRE 119042303
 Ubuntu 20.04 LTS
+Problem chosen: FIFO Barber Shop
 */
 #include <stdlib.h>
+#include <unistd.h>
 #include <stdio.h>
 #include <pthread.h>
 
@@ -12,11 +14,38 @@ pthread_t *queue;
 
 int numberOfClients, numberOfChairs;
 int amountOfCustomers = 0;
-pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t queueMutex = PTHREAD_MUTEX_INITIALIZER;
+
+pthread_mutex_t haircutMutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t customerIshere = PTHREAD_COND_INITIALIZER;
+pthread_cond_t barberisFree = PTHREAD_COND_INITIALIZER;
+pthread_cond_t barberDone = PTHREAD_COND_INITIALIZER;
+pthread_cond_t clientDone = PTHREAD_COND_INITIALIZER;
+int barberIsDoneForTheDay = 0;
 
 void *handle_barber()
 {
-    printf("Getting you a magnificent haircut >.<\n");
+    while (1){
+        pthread_mutex_lock(&haircutMutex);
+        pthread_cond_wait(&customerIshere,&haircutMutex);
+        pthread_cond_signal(&barberisFree);
+        pthread_cond_wait(&clientDone,&haircutMutex);
+        pthread_cond_signal(&barberDone);
+        pthread_mutex_unlock(&haircutMutex);
+        // Haircut Done
+
+        // Checking if there's someone else in line:
+        pthread_mutex_lock(&queueMutex);
+        amountOfCustomers = amountOfCustomers - 1; // He just cut someone's hair
+        while (amountOfCustomers == 0){
+            barberIsDoneForTheDay = 1;
+            pthread_mutex_unlock(&queueMutex);
+            pthread_exit(NULL);
+        }
+        pthread_mutex_unlock(&queueMutex);
+
+    }
+    printf("%s\n","Looks like there are no more customers today!");
     pthread_exit(NULL);
 }
 
@@ -27,19 +56,46 @@ void *client(void *threadID)
     // Freeing memory of the index.
     free(threadID);
 
-    printf("Hi, I'm id(%d)\n", id);
+    // Trying to grab the lock:
+    pthread_mutex_lock(&queueMutex);
+    if (barberIsDoneForTheDay){
+        printf("%s\n","Oh crap, the barber has already closed the shop!");
+        pthread_exit(NULL);
+    }
+    while (amountOfCustomers == numberOfChairs){
+        printf("It's full. (ID:%d) is going home\n", id);
+        pthread_mutex_unlock(&queueMutex);
+        pthread_exit(NULL);
+    }
+    // If the thread hasnt exited in the while block above:
+    amountOfCustomers += 1;
+    printf("(id:%d) is in line\n",id);
+    // Append to queue
+    pthread_mutex_unlock(&queueMutex);
+
+    // Grabbing haircut lock
+    pthread_mutex_lock(&haircutMutex);
+    // Signaling there is a customer and waits for barber to be free
+    pthread_cond_signal(&customerIshere);
+    pthread_cond_wait(&barberisFree,&haircutMutex);
+    // Getting the haircut...
+    printf("Thank you for cutting my hair, Mr. Barber. Im (id:%d)\n",id);
+    pthread_cond_signal(&clientDone);
+    pthread_cond_wait(&barberDone,&haircutMutex);
+    pthread_mutex_unlock(&haircutMutex);
+
     pthread_exit(NULL);
 }
 
 int main(int argc, char *argv[])
 {
     // Getting Parameters from argv or request input
-    printf("Welcome to our barber shop!\n");
+    printf("%s\n","Welcome to our barber shop!");
     if (argc != 3)
     {
-        printf("Please, enter the number of clients(threads):\n");
+        printf("%s\n","Please, enter the number of customers(threads):");
         scanf("%d", &numberOfClients);
-        printf("Please enter the number of chairs in the waiting room(queue size):\n");
+        printf("%s\n","Please enter the number of chairs in the waiting room(queue size):");
         scanf("%d", &numberOfChairs);
     }
     else
