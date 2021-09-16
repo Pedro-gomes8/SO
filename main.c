@@ -11,7 +11,8 @@ pthread_t barber;
 pthread_t *queue;
 
 int numberOfClients, numberOfChairs;
-pthread_mutex_t mutex;
+int amountOfCustomers = 0;
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void *handle_barber()
 {
@@ -19,9 +20,14 @@ void *handle_barber()
     pthread_exit(NULL);
 }
 
-void *client(int threadID)
-{
-    printf("%d", threadID);
+void *client(void *threadID)
+{   
+    // Grabbing the index of the thread.
+    int id = *((int*) threadID);
+    // Freeing memory of the index.
+    free(threadID);
+
+    printf("Hi, I'm id(%d)\n", id);
     pthread_exit(NULL);
 }
 
@@ -47,10 +53,14 @@ int main(int argc, char *argv[])
     // Creating Clients as well as allocating memory for each client and queue
     clients = (pthread_t *)malloc(sizeof(pthread_t) * numberOfClients);
     queue = (pthread_t *)malloc(sizeof(pthread_t) * numberOfChairs);
+
     int i;
     for (i = 0; i < numberOfChairs; i++)
     {
-        pthread_create(&clients[i], NULL, client, i);
+        // Allocating memory for the index. That way it's easier to identify the thread by their "ID", which, in this case, is just "i".
+        int *id = malloc(sizeof(int));
+        *id = i;
+        pthread_create(&clients[i], NULL, client, id);
     }
     // Waiting for barber to exit
     pthread_join(barber, NULL);
