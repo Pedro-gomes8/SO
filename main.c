@@ -11,6 +11,7 @@ pthread_t barber;
 pthread_t *queue;
 
 int numberOfClients, numberOfChairs;
+pthread_mutex_t mutex;
 
 void *handle_barber()
 {
@@ -18,9 +19,9 @@ void *handle_barber()
     pthread_exit(NULL);
 }
 
-void *client(void *par)
+void *client(int threadID)
 {
-    printf("oii\n");
+    printf("%d", threadID);
     pthread_exit(NULL);
 }
 
@@ -49,7 +50,7 @@ int main(int argc, char *argv[])
     int i;
     for (i = 0; i < numberOfChairs; i++)
     {
-        pthread_create(&clients[i], NULL, client, NULL);
+        pthread_create(&clients[i], NULL, client, i);
     }
     // Waiting for barber to exit
     pthread_join(barber, NULL);
