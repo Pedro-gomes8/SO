@@ -7,54 +7,75 @@ Problem chosen: FIFO Barber Shop
 #include <stdio.h>
 #include <pthread.h>
 #include <time.h>
+#include <math.h>
 
 pthread_t *clients;
 pthread_t barber;
 pthread_t *queue;
 
-int numberOfClients, numberOfChairs;
+//
+enum {secsToSleep = 0, NsectoSleep = 500000000};
+struct timespec haircutTime = {secsToSleep, NsectoSleep};
+
+int numberOfClients, numberOfChairs,thread_ID;
 int amountOfCustomers = 0;
 pthread_mutex_t queueMutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t BarberMutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t WaitforBarber = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t WaitForClient = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t ID_Mutex = PTHREAD_MUTEX_INITIALIZER;
 
-pthread_mutex_t haircutMutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t customerIshere = PTHREAD_COND_INITIALIZER;
-pthread_cond_t barberisFree = PTHREAD_COND_INITIALIZER;
-pthread_cond_t barberDone = PTHREAD_COND_INITIALIZER;
-pthread_cond_t clientDone = PTHREAD_COND_INITIALIZER;
-int barberIsDoneForTheDay = 0;
+pthread_cond_t customerIsHere = PTHREAD_COND_INITIALIZER;
+pthread_cond_t barberIsDone = PTHREAD_COND_INITIALIZER;
+pthread_cond_t barberIsFree = PTHREAD_COND_INITIALIZER;
+pthread_cond_t ClientLeft = PTHREAD_COND_INITIALIZER;
+
+int BarberHasSleptOnce = 0; // Stop condition. Barber can sleep once (i.e. when he is the first created thread to execute, thus he shall sleep until a customer arrives), but if he sleeps a second time, that means the queue is empty.
+int BarberIsSleeping = 0; 
 
 void *handle_barber()
 {
-    // Waiting for first customer
-    pthread_mutex_lock(&haircutMutex);
-    pthread_cond_wait(&customerIshere,&haircutMutex);
-    pthread_cond_signal(&barberisFree);
-    pthread_mutex_unlock(&haircutMutex);
-    pthread_cond_wait(&clientDone,&haircutMutex);
-        
-    pthread_cond_signal(&barberDone);
-    pthread_mutex_unlock(&haircutMutex);
-    while (amountOfCustomers != 0){
-        pthread_mutex_lock(&haircutMutex);
-        pthread_cond_signal(&barberisFree);
-        pthread_cond_wait(&clientDone,&haircutMutex);
-        
-        pthread_cond_signal(&barberDone);
-        pthread_mutex_unlock(&haircutMutex);
-        // Haircut Done
-
-        // Checking if there's someone else in line:
-        pthread_mutex_lock(&queueMutex);
-        while (amountOfCustomers == 0){
-            barberIsDoneForTheDay = 1;
+    while(1){
+        pthread_mutex_lock(&queueMutex); // Prevents other threads changing the value of 'amountOfCustomers' while the barber is checking it
+        if (amountOfCustomers == 0){
             pthread_mutex_unlock(&queueMutex);
-            pthread_exit(NULL);
+            if (BarberHasSleptOnce){
+                printf("Looks like there's no one in line. Im gonna sleep again and close the shop\n");
+                pthread_exit(NULL);
+            }
+            pthread_mutex_unlock(&queueMutex);
+            pthread_mutex_lock(&BarberMutex);
+            BarberIsSleeping = 1;
+            pthread_cond_wait(&customerIsHere,&BarberMutex);
+            // When he wakes up;
+            BarberIsSleeping = 0;
+            pthread_mutex_unlock(&BarberMutex);
         }
-        pthread_mutex_unlock(&queueMutex);
+        else {
+            pthread_mutex_unlock(&queueMutex);
+            printf("Cutting Hair...\n");
+            nanosleep(&haircutTime,NULL);
+            pthread_mutex_lock(&ID_Mutex);
+            printf("Thank you. Have a nice day (id:%d)\n",thread_ID);
+            pthread_mutex_unlock(&ID_Mutex);
 
+            pthread_mutex_lock(&queueMutex);
+            amountOfCustomers = amountOfCustomers - 1;
+            pthread_mutex_unlock(&queueMutex);
+            pthread_cond_signal(&barberIsFree);
+
+            switch (BarberHasSleptOnce) // If barber wasnt the first created thread to be executed, that means there was no need for him to sleep for the first time. In that case, the first time he'd sleep would be whenever the queue would be empty. Essentially, it means: "If barber hasnt slept up to this point, lie about it and say he has slept once."
+            {
+            case 0:
+                BarberHasSleptOnce = 1;
+                break;
+            case 1:
+                break;       
+            }
+        }
+        
     }
-    printf("%s\n","Looks like there are no more customers today!");
-    pthread_exit(NULL);
+    printf("Helloo Mr. Rodrigo, this should never print\n");
 }
 
 void *client(void *threadID)
@@ -64,38 +85,26 @@ void *client(void *threadID)
     // Freeing memory of the index.
     free(threadID);
 
-    // Trying to grab the lock:
     pthread_mutex_lock(&queueMutex);
-    if (barberIsDoneForTheDay){
-        printf("%s\n","Oh crap, the barber has already closed the shop!");
-        pthread_exit(NULL);
-    }
-    while (amountOfCustomers >= numberOfChairs){
-        printf("It's full. (ID:%d) is going home\n", id);
+    if (amountOfCustomers >= numberOfChairs){
+        printf("Oh no, this shop is full, (id:%d) is leaving\n",id);
         pthread_mutex_unlock(&queueMutex);
         pthread_exit(NULL);
     }
-    // If the thread hasnt exited in the while block above:
-    amountOfCustomers += 1;
-    printf("(id:%d) is in line\n",id);
-    // {Append to queue}
+    amountOfCustomers = amountOfCustomers + 1;
+
+    if(BarberIsSleeping){
+        pthread_cond_signal(&customerIsHere);
+    }
     pthread_mutex_unlock(&queueMutex);
-
-    // Grabbing haircut lock
-    pthread_mutex_lock(&haircutMutex);
-    // Signaling there is a customer and waits for barber to be free
-    pthread_cond_signal(&customerIshere);
-    pthread_cond_wait(&barberisFree,&haircutMutex);
-    // Getting the haircut...
-    printf("Thank you for cutting my hair, Mr. Barber. Im (id:%d)\n",id);
-    pthread_cond_signal(&clientDone);
-    pthread_cond_wait(&barberDone,&haircutMutex);
-    pthread_mutex_unlock(&haircutMutex);
-
-    pthread_mutex_lock(&queueMutex);
-    amountOfCustomers = amountOfCustomers - 1;
-    pthread_mutex_unlock(&queueMutex);
-
+    pthread_mutex_lock(&WaitforBarber);
+    pthread_cond_wait(&barberIsFree,&WaitforBarber);
+    // Barber begins cutting hair...
+    // when this thread wakes up:
+    pthread_mutex_lock(&ID_Mutex);
+    thread_ID = id;
+    pthread_mutex_unlock(&ID_Mutex);
+    pthread_mutex_unlock(&WaitforBarber);
     pthread_exit(NULL);
 }
 
