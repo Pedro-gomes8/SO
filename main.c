@@ -22,7 +22,6 @@ pthread_mutex_t queueMutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t BarberMutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t WaitforBarber = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t WaitForClient = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t ID_Mutex = PTHREAD_MUTEX_INITIALIZER;
 
 pthread_cond_t customerIsHere = PTHREAD_COND_INITIALIZER;
 pthread_cond_t barberIsDone = PTHREAD_COND_INITIALIZER;
@@ -70,7 +69,7 @@ void *handle_barber()
         if (amountOfCustomers == 0){
             pthread_mutex_unlock(&queueMutex);
             if (BarberHasSleptOnce){
-                printf("Looks like there's no one in line. Im gonna sleep again and close the shop\n");
+                printf("Looks like there's no one else left in line. Im gonna sleep again and close the shop!\n");
                 pthread_exit(NULL);
             }
             pthread_mutex_unlock(&queueMutex);
@@ -91,7 +90,7 @@ void *handle_barber()
             // Gets the customer's "name".
             void * threadid = queue_read(&customerQueue);
             int id = (int) (long) threadid;
-            printf("Thank you. Have a nice day (id:%d)\n",id);
+            printf("\tThere we go! Have a nice day Mr.(id:%d)\n",id);
             // pthread_mutex_unlock(&queueMutex);
             // Changing the amount of customers left to offer haircut services as he just cut someone's hair.
             // pthread_mutex_lock(&queueMutex);
@@ -138,16 +137,14 @@ void *client(void *threadID)
     pthread_cond_wait(&barberIsFree,&WaitforBarber);
     // Barber begins cutting hair...
     // when this thread wakes up:
-    // pthread_mutex_lock(&ID_Mutex);
-    // thread_ID = id;
-    // pthread_mutex_unlock(&ID_Mutex);
     pthread_mutex_unlock(&WaitforBarber);
     pthread_exit(NULL);
 }
 
 int main(int argc, char *argv[])
 {
-    printf("\nIMPORTANTE. Apos alguns testes, eu percebi que esse codigo possui uma falha que pode aparecer ou nao quando for testar que nao consegui identificar. De alguma forma, uma unica thread (independente dos parametros que esse codigo recebe) 'perde' seu ID. seu ID passa a ser 0 como se fosse a primeira thread criada, e essa thread que perde o ID acaba no final da queue. Isso pode aparecer nos resultados. Embora uma unica thread possa perder, ou nao, seu lugar na fila, todas as threads continuam tendo seu cabelo cortado yay\n\n");
+    printf("\nIMPORTANTE. Apos alguns testes, eu percebi que esse codigo possui uma falha que pode aparecer, ou nao, quando for testar que nao consegui identificar. De alguma forma, apenas uma unica thread (independente dos parametros que esse codigo recebe) 'perde' seu ID. seu ID passa a ser 0 como se fosse a primeira thread criada, e essa thread que perde o ID acaba no final da queue. Isso pode aparecer nos resultados. Embora uma unica thread possa perder, ou nao, seu lugar na fila, todas as threads que entram na barbearia continuam tendo seu cabelo cortado yay!\n\n");
+
     // Getting Parameters from argv or request input
     printf("%s\n","Welcome to our barber shop!");
     if (argc != 3)
@@ -165,6 +162,7 @@ int main(int argc, char *argv[])
 
     // Creating Clients as well as allocating memory for each client and queue
     clients = (pthread_t *)malloc(sizeof(pthread_t) * numberOfClients);
+    // Initializing queue structure
     customerQueue.head = 0;
     customerQueue.tail = 0;
     customerQueue.size = numberOfChairs;
@@ -181,6 +179,8 @@ int main(int argc, char *argv[])
         int *id = malloc(sizeof(int));
         *id = i;
         pthread_create(&clients[i], NULL, client, id);
+        // Sleeping so the queue doesnt get "immediately" filled in.
+        // Enables barber to clear spots in queue while he cuts some thread's hair. Other threads can then, if they see a spot available, join the queue.
         nanosleep(&loopsleep,NULL);
     }
     // Waiting for barber to exit
