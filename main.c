@@ -4,9 +4,9 @@ Ubuntu 20.04 LTS
 Problem chosen: FIFO Barber Shop
 */
 #include <stdlib.h>
-#include <unistd.h>
 #include <stdio.h>
 #include <pthread.h>
+#include <time.h>
 
 pthread_t *clients;
 pthread_t barber;
@@ -25,18 +25,26 @@ int barberIsDoneForTheDay = 0;
 
 void *handle_barber()
 {
-    while (1){
+    // Waiting for first customer
+    pthread_mutex_lock(&haircutMutex);
+    pthread_cond_wait(&customerIshere,&haircutMutex);
+    pthread_cond_signal(&barberisFree);
+    pthread_mutex_unlock(&haircutMutex);
+    pthread_cond_wait(&clientDone,&haircutMutex);
+        
+    pthread_cond_signal(&barberDone);
+    pthread_mutex_unlock(&haircutMutex);
+    while (amountOfCustomers != 0){
         pthread_mutex_lock(&haircutMutex);
-        pthread_cond_wait(&customerIshere,&haircutMutex);
         pthread_cond_signal(&barberisFree);
         pthread_cond_wait(&clientDone,&haircutMutex);
+        
         pthread_cond_signal(&barberDone);
         pthread_mutex_unlock(&haircutMutex);
         // Haircut Done
 
         // Checking if there's someone else in line:
         pthread_mutex_lock(&queueMutex);
-        amountOfCustomers = amountOfCustomers - 1; // He just cut someone's hair
         while (amountOfCustomers == 0){
             barberIsDoneForTheDay = 1;
             pthread_mutex_unlock(&queueMutex);
@@ -62,7 +70,7 @@ void *client(void *threadID)
         printf("%s\n","Oh crap, the barber has already closed the shop!");
         pthread_exit(NULL);
     }
-    while (amountOfCustomers == numberOfChairs){
+    while (amountOfCustomers >= numberOfChairs){
         printf("It's full. (ID:%d) is going home\n", id);
         pthread_mutex_unlock(&queueMutex);
         pthread_exit(NULL);
@@ -70,7 +78,7 @@ void *client(void *threadID)
     // If the thread hasnt exited in the while block above:
     amountOfCustomers += 1;
     printf("(id:%d) is in line\n",id);
-    // Append to queue
+    // {Append to queue}
     pthread_mutex_unlock(&queueMutex);
 
     // Grabbing haircut lock
@@ -83,6 +91,10 @@ void *client(void *threadID)
     pthread_cond_signal(&clientDone);
     pthread_cond_wait(&barberDone,&haircutMutex);
     pthread_mutex_unlock(&haircutMutex);
+
+    pthread_mutex_lock(&queueMutex);
+    amountOfCustomers = amountOfCustomers - 1;
+    pthread_mutex_unlock(&queueMutex);
 
     pthread_exit(NULL);
 }
